@@ -1,0 +1,89 @@
+MAIN.PY
+
+import os
+os.environ["PATH"] += os.pathsep + r"C:\Users\PC\Downloads\ffmpeg-7.1.1-essentials_build\ffmpeg-7.1.1-essentials_build\bin"
+import openai
+from dotenv import load_dotenv
+import whisper
+import subprocess
+from transformers import pipeline
+import yt_dlp
+# subprocess.run(["C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe", "-version"], check=True)
+load_dotenv()
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+from moviepy import VideoFileClip
+# ---------- Step 1: Extract Audio from Video ----------
+def extract_audio(video_path, audio_path="audio.wav"):
+    print("[+] Extracting audio...")
+    clip = VideoFileClip(video_path)
+    clip.audio.write_audiofile(audio_path)
+    return audio_path
+
+# ---------- Step 2: Transcribe Audio with Whisper ----------
+def transcribe_audio(audio_path):
+    print("[+] Transcribing audio with Whisper...")
+    model = whisper.load_model("base")  # use 'small', 'medium', or 'large' if needed
+    result = model.transcribe(audio_path)
+    transcript = result["text"]
+    with open("transcript.txt", "w", encoding="utf-8") as f:
+        f.write(transcript)
+    return transcript
+
+# ---------- Step 3: Summarize Transcript with OpenAI ----------
+def summarize_text(text, chunk_size=900):
+    print("[+] Summarizing transcript with local model...")
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=-1)
+    # Split text into chunks
+    import textwrap
+    chunks = textwrap.wrap(text, chunk_size)
+    summaries = []
+    for i, chunk in enumerate(chunks):
+        print(f"  Summarizing chunk {i+1}/{len(chunks)}...")
+        summary = summarizer(chunk, max_length=60, min_length=10, do_sample=False)[0]['summary_text']
+        summaries.append(summary)
+    final_summary = "\n".join(summaries)
+    with open("summary.txt", "w", encoding="utf-8") as f:
+        f.write(final_summary)
+    return final_summary
+
+# ---------- Step 4: Download YouTube Audio ----------
+def download_youtube_audio(youtube_url, output_path="youtube_audio"):
+    print("[+] Downloading audio from YouTube...")
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_path,  # No .mp3 here!
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'quiet': False,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([youtube_url])
+    return output_path + ".mp3"
+
+# ---------- Step 5: Main Driver Function ----------
+def main():
+    print("Choose input type:")
+    print("1. Local video file")
+    print("2. YouTube video URL")
+    choice = input("Enter 1 or 2: ").strip()
+
+    if choice == "1":
+        video_file = input("Enter the path to your local video file: ").strip()
+        audio_file = extract_audio(video_file)
+    elif choice == "2":
+        youtube_url = input("Paste YouTube video URL: ").strip()
+        audio_file = download_youtube_audio(youtube_url, "youtube_audio")
+    else:
+        print("Invalid choice.")
+        return
+
+    transcript = transcribe_audio(audio_file)
+    summary = summarize_text(transcript)
+    print("\n✅ Done! Your summary is saved in summary.txt")
+
+if __name__ == "__main__":
+    main()
